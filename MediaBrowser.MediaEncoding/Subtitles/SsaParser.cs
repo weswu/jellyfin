@@ -51,7 +51,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     {
                         eventsStarted = true;
                     }
-                    else if (!string.IsNullOrEmpty(line) && line.Trim().StartsWith(";", StringComparison.Ordinal))
+                    else if (!string.IsNullOrEmpty(line) && line.Trim().StartsWith(';'))
                     {
                         // skip comment lines
                     }
@@ -151,13 +151,13 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                             try
                             {
-                                var p = new SubtitleTrackEvent();
-
-                                p.StartPositionTicks = GetTimeCodeFromString(start);
-                                p.EndPositionTicks = GetTimeCodeFromString(end);
-                                p.Text = GetFormattedText(text);
-
-                                trackEvents.Add(p);
+                                trackEvents.Add(
+                                    new SubtitleTrackEvent
+                                    {
+                                        StartPositionTicks = GetTimeCodeFromString(start),
+                                        EndPositionTicks = GetTimeCodeFromString(end),
+                                        Text = GetFormattedText(text)
+                                    });
                             }
                             catch
                             {
@@ -325,7 +325,15 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                             text = text.Insert(start, "<font color=\"" + color + "\"" + extraTags + ">");
                         }
 
-                        text += "</font>";
+                        int indexOfEndTag = text.IndexOf("{\\1c}", start, StringComparison.Ordinal);
+                        if (indexOfEndTag > 0)
+                        {
+                            text = text.Remove(indexOfEndTag, "{\\1c}".Length).Insert(indexOfEndTag, "</font>");
+                        }
+                        else
+                        {
+                            text += "</font>";
+                        }
                     }
                 }
             }

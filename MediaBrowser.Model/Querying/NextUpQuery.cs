@@ -18,7 +18,7 @@ namespace MediaBrowser.Model.Querying
         /// Gets or sets the parent identifier.
         /// </summary>
         /// <value>The parent identifier.</value>
-        public string ParentId { get; set; }
+        public Guid? ParentId { get; set; }
 
         /// <summary>
         /// Gets or sets the series id.
@@ -64,10 +64,16 @@ namespace MediaBrowser.Model.Querying
 
         public bool EnableTotalRecordCount { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether do disable sending first episode as next up.
+        /// </summary>
+        public bool DisableFirstEpisode { get; set; }
+
         public NextUpQuery()
         {
             EnableImageTypes = Array.Empty<ImageType>();
             EnableTotalRecordCount = true;
+            DisableFirstEpisode = false;
         }
     }
 }

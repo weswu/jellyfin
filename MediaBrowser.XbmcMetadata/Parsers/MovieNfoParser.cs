@@ -39,8 +39,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             {
                 case "id":
                     {
-                        string imdbId = reader.GetAttribute("IMDB");
-                        string tmdbId = reader.GetAttribute("TMDB");
+                        string? imdbId = reader.GetAttribute("IMDB");
+                        string? tmdbId = reader.GetAttribute("TMDB");
 
                         if (string.IsNullOrWhiteSpace(imdbId))
                         {
@@ -75,7 +75,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         if (!string.IsNullOrWhiteSpace(val) && movie != null)
                         {
                             // TODO Handle this better later
-                            if (val.IndexOf('<', StringComparison.Ordinal) == -1)
+                            if (!val.Contains('<', StringComparison.Ordinal))
                             {
                                 movie.CollectionName = val;
                             }

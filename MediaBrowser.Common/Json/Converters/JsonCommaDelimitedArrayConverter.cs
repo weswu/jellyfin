@@ -43,8 +43,9 @@ namespace MediaBrowser.Common.Json.Converters
                     }
                     catch (FormatException)
                     {
-                        // TODO log when upgraded to .Net5
-                        // _logger.LogWarning(e, "Error converting value.");
+                        // TODO log when upgraded to .Net6
+                        // https://github.com/dotnet/runtime/issues/42975
+                        // _logger.LogDebug(e, "Error converting value.");
                     }
                 }
 

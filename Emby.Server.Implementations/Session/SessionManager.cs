@@ -58,8 +58,7 @@ namespace Emby.Server.Implementations.Session
         /// <summary>
         /// The active connections.
         /// </summary>
-        private readonly ConcurrentDictionary<string, SessionInfo> _activeConnections =
-            new ConcurrentDictionary<string, SessionInfo>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, SessionInfo> _activeConnections = new (StringComparer.OrdinalIgnoreCase);
 
         private Timer _idleTimer;
 
@@ -129,6 +128,9 @@ namespace Emby.Server.Implementations.Session
         /// <inheritdoc />
         public event EventHandler<SessionEventArgs> SessionActivity;
 
+        /// <inheritdoc />
+        public event EventHandler<SessionEventArgs> SessionControllerConnected;
+
         /// <summary>
         /// Gets all connections.
         /// </summary>
@@ -196,7 +198,7 @@ namespace Emby.Server.Implementations.Session
         {
             if (!string.IsNullOrEmpty(info.DeviceId))
             {
-                var capabilities = GetSavedCapabilities(info.DeviceId);
+                var capabilities = _deviceManager.GetCapabilities(info.DeviceId);
 
                 if (capabilities != null)
                 {
@@ -311,6 +313,19 @@ namespace Emby.Server.Implementations.Session
             }
 
             return session;
+        }
+
+        /// <inheritdoc />
+        public void OnSessionControllerConnected(SessionInfo info)
+        {
+            EventHelper.QueueEventIfNotNull(
+                SessionControllerConnected,
+                this,
+                new SessionEventArgs
+                {
+                    SessionInfo = info
+                },
+                _logger);
         }
 
         /// <inheritdoc />
@@ -1182,18 +1197,16 @@ namespace Emby.Server.Implementations.Session
         }
 
         /// <inheritdoc />
-        public async Task SendSyncPlayCommand(string sessionId, SendCommand command, CancellationToken cancellationToken)
+        public async Task SendSyncPlayCommand(SessionInfo session, SendCommand command, CancellationToken cancellationToken)
         {
             CheckDisposed();
-            var session = GetSessionToRemoteControl(sessionId);
             await SendMessageToSession(session, SessionMessageType.SyncPlayCommand, command, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
-        public async Task SendSyncPlayGroupUpdate<T>(string sessionId, GroupUpdate<T> command, CancellationToken cancellationToken)
+        public async Task SendSyncPlayGroupUpdate<T>(SessionInfo session, GroupUpdate<T> command, CancellationToken cancellationToken)
         {
             CheckDisposed();
-            var session = GetSessionToRemoteControl(sessionId);
             await SendMessageToSession(session, SessionMessageType.SyncPlayGroupUpdate, command, cancellationToken).ConfigureAwait(false);
         }
 
@@ -1297,7 +1310,7 @@ namespace Emby.Server.Implementations.Session
                 }
             }
 
-            return SendMessageToSession(session, SessionMessageType.PlayState, command, cancellationToken);
+            return SendMessageToSession(session, SessionMessageType.Playstate, command, cancellationToken);
         }
 
         private static void AssertCanControl(SessionInfo session, SessionInfo controllingSession)
@@ -1677,25 +1690,8 @@ namespace Emby.Server.Implementations.Session
                         SessionInfo = session
                     });
 
-                try
-                {
-                    SaveCapabilities(session.DeviceId, capabilities);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Error saving device capabilities", ex);
-                }
+                _deviceManager.SaveCapabilities(session.DeviceId, capabilities);
             }
-        }
-
-        private ClientCapabilities GetSavedCapabilities(string deviceId)
-        {
-            return _deviceManager.GetCapabilities(deviceId);
-        }
-
-        private void SaveCapabilities(string deviceId, ClientCapabilities capabilities)
-        {
-            _deviceManager.SaveCapabilities(deviceId, capabilities);
         }
 
         /// <summary>

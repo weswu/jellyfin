@@ -231,14 +231,15 @@ namespace MediaBrowser.Providers.Manager
 
         private async Task SavePeopleMetadataAsync(List<PersonInfo> people, LibraryOptions libraryOptions, CancellationToken cancellationToken)
         {
+            var personsToSave = new List<BaseItem>();
+
             foreach (var person in people)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (person.ProviderIds.Count > 0 || !string.IsNullOrWhiteSpace(person.ImageUrl))
                 {
-                    var updateType = ItemUpdateType.MetadataDownload;
-
+                    var itemUpdateType = ItemUpdateType.MetadataDownload;
                     var saveEntity = false;
                     var personEntity = LibraryManager.GetPerson(person.Name);
                     foreach (var id in person.ProviderIds)
@@ -261,15 +262,18 @@ namespace MediaBrowser.Providers.Manager
                             0);
 
                         saveEntity = true;
-                        updateType |= ItemUpdateType.ImageUpdate;
+                        itemUpdateType = ItemUpdateType.ImageUpdate;
                     }
 
                     if (saveEntity)
                     {
-                        await personEntity.UpdateToRepositoryAsync(updateType, cancellationToken).ConfigureAwait(false);
+                        personsToSave.Add(personEntity);
+                        await LibraryManager.RunMetadataSavers(personEntity, itemUpdateType).ConfigureAwait(false);
                     }
                 }
             }
+
+            LibraryManager.CreateItems(personsToSave, null, CancellationToken.None);
         }
 
         protected virtual Task AfterMetadataRefresh(TItemType item, MetadataRefreshOptions refreshOptions, CancellationToken cancellationToken)

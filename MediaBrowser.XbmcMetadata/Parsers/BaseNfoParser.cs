@@ -37,6 +37,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             Logger = logger;
             _config = config;
             ProviderManager = providerManager;
+            _validProviderIds = new Dictionary<string, string>();
         }
 
         protected CultureInfo UsCulture { get; } = new CultureInfo("en-US");
@@ -62,17 +63,17 @@ namespace MediaBrowser.XbmcMetadata.Parsers
         /// <exception cref="ArgumentException"><c>metadataFile</c> is <c>null</c> or empty.</exception>
         public void Fetch(MetadataResult<T> item, string metadataFile, CancellationToken cancellationToken)
         {
-            if (item == null)
+            if (item.Item == null)
             {
-                throw new ArgumentNullException(nameof(item));
+                throw new ArgumentException("Item can't be null.", nameof(item));
             }
 
             if (string.IsNullOrEmpty(metadataFile))
             {
-                throw new ArgumentException("The metadata file was empty or null.", nameof(metadataFile));
+                throw new ArgumentException("The metadata filepath was empty.", nameof(metadataFile));
             }
 
-            _validProviderIds = _validProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _validProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             var idInfos = ProviderManager.GetExternalIdInfos(item.Item);
 
@@ -269,17 +270,13 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            if (DateTime.TryParseExact(val, BaseNfoSaver.DateAddedFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var added))
-                            {
-                                item.DateCreated = added.ToUniversalTime();
-                            }
-                            else if (DateTime.TryParse(val, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out added))
+                            if (DateTime.TryParse(val, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var added))
                             {
                                 item.DateCreated = added.ToUniversalTime();
                             }
                             else
                             {
-                                Logger.LogWarning("Invalid Added value found: " + val);
+                                Logger.LogWarning("Invalid Added value found: {Value}", val);
                             }
                         }
 
@@ -298,9 +295,14 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
+                case "name":
                 case "title":
                 case "localtitle":
                     item.Name = reader.ReadElementContentAsString();
+                    break;
+
+                case "sortname":
+                    item.SortName = reader.ReadElementContentAsString();
                     break;
 
                 case "criticrating":
@@ -376,23 +378,15 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                 }
 
                                 return null;
-                            }).Where(i => i.HasValue).Select(i => i.Value).ToArray();
+                            }).OfType<MetadataField>().ToArray();
                         }
 
                         break;
                     }
 
                 case "tagline":
-                    {
-                        var val = reader.ReadElementContentAsString();
-
-                        if (!string.IsNullOrWhiteSpace(val))
-                        {
-                            item.Tagline = val;
-                        }
-
-                        break;
-                    }
+                    item.Tagline = reader.ReadElementContentAsString();
+                    break;
 
                 case "country":
                     {
@@ -634,7 +628,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            if (DateTime.TryParseExact(val, formatString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var date) && date.Year > 1850)
+                            if (DateTime.TryParseExact(val, formatString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date) && date.Year > 1850)
                             {
                                 item.PremiereDate = date.ToUniversalTime();
                                 item.ProductionYear = date.Year;
@@ -652,7 +646,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            if (DateTime.TryParseExact(val, formatString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var date) && date.Year > 1850)
+                            if (DateTime.TryParseExact(val, formatString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date) && date.Year > 1850)
                             {
                                 item.EndDate = date.ToUniversalTime();
                             }
@@ -709,12 +703,44 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
+                case "uniqueid":
+                    {
+                        if (reader.IsEmptyElement)
+                        {
+                            reader.Read();
+                            break;
+                        }
+
+                        var provider = reader.GetAttribute("type");
+                        var id = reader.ReadElementContentAsString();
+                        if (!string.IsNullOrWhiteSpace(provider) && !string.IsNullOrWhiteSpace(id))
+                        {
+                            item.SetProviderId(provider, id);
+                        }
+
+                        break;
+                    }
+
+                case "musicBrainzArtistID":
+                    {
+                        if (reader.IsEmptyElement)
+                        {
+                            reader.Read();
+                            break;
+                        }
+
+                        var id = reader.ReadElementContentAsString();
+                        item.SetProviderId(MetadataProvider.MusicBrainzArtist.ToString(), id);
+
+                        break;
+                    }
+
                 default:
                     string readerName = reader.Name;
-                    if (_validProviderIds.TryGetValue(readerName, out string providerIdValue))
+                    if (_validProviderIds.TryGetValue(readerName, out string? providerIdValue))
                     {
                         var id = reader.ReadElementContentAsString();
-                        if (!string.IsNullOrWhiteSpace(id))
+                        if (!string.IsNullOrWhiteSpace(providerIdValue) && !string.IsNullOrWhiteSpace(id))
                         {
                             item.SetProviderId(providerIdValue, id);
                         }
@@ -796,6 +822,22 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                 break;
                             }
 
+                        case "subtitle":
+                            {
+                                if (reader.IsEmptyElement)
+                                {
+                                    reader.Read();
+                                    continue;
+                                }
+
+                                using (var subtree = reader.ReadSubtree())
+                                {
+                                    FetchFromSubtitleNode(subtree, item);
+                                }
+
+                                break;
+                            }
+
                         default:
                             reader.Skip();
                             break;
@@ -853,6 +895,90 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                 break;
                             }
 
+                        case "aspect":
+                            {
+                                var val = reader.ReadElementContentAsString();
+
+                                if (item is Video video)
+                                {
+                                    video.AspectRatio = val;
+                                }
+
+                                break;
+                            }
+
+                        case "width":
+                            {
+                                var val = reader.ReadElementContentAsInt();
+
+                                if (item is Video video)
+                                {
+                                    video.Width = val;
+                                }
+
+                                break;
+                            }
+
+                        case "height":
+                            {
+                                var val = reader.ReadElementContentAsInt();
+
+                                if (item is Video video)
+                                {
+                                    video.Height = val;
+                                }
+
+                                break;
+                            }
+
+                        case "durationinseconds":
+                            {
+                                var val = reader.ReadElementContentAsInt();
+
+                                if (item is Video video)
+                                {
+                                    video.RunTimeTicks = new TimeSpan(0, 0, val).Ticks;
+                                }
+
+                                break;
+                            }
+
+                        default:
+                            reader.Skip();
+                            break;
+                    }
+                }
+                else
+                {
+                    reader.Read();
+                }
+            }
+        }
+
+        private void FetchFromSubtitleNode(XmlReader reader, T item)
+        {
+            reader.MoveToContent();
+            reader.Read();
+
+            // Loop through each element
+            while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+            {
+                if (reader.NodeType == XmlNodeType.Element)
+                {
+                    switch (reader.Name)
+                    {
+                        case "language":
+                            {
+                                _ = reader.ReadElementContentAsString();
+
+                                if (item is Video video)
+                                {
+                                    video.HasSubtitles = true;
+                                }
+
+                                break;
+                            }
+
                         default:
                             reader.Skip();
                             break;
@@ -876,6 +1002,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             var type = PersonType.Actor;  // If type is not specified assume actor
             var role = string.Empty;
             int? sortOrder = null;
+            string? imageUrl = null;
 
             reader.MoveToContent();
             reader.Read();
@@ -903,6 +1030,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                 break;
                             }
 
+                        case "order":
                         case "sortorder":
                             {
                                 var val = reader.ReadElementContentAsString();
@@ -913,6 +1041,18 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                     {
                                         sortOrder = intVal;
                                     }
+                                }
+
+                                break;
+                            }
+
+                        case "thumb":
+                            {
+                                var val = reader.ReadElementContentAsString();
+
+                                if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    imageUrl = val;
                                 }
 
                                 break;
@@ -934,7 +1074,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                 Name = name.Trim(),
                 Role = role,
                 Type = type,
-                SortOrder = sortOrder
+                SortOrder = sortOrder,
+                ImageUrl = imageUrl
             };
         }
 

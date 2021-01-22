@@ -67,6 +67,7 @@ namespace Jellyfin.Api.Controllers
         /// <param name="enableImageTypes">Optional. The image types to include in the output.</param>
         /// <param name="enableUserData">Optional. Include user data.</param>
         /// <param name="enableTotalRecordCount">Whether to enable the total records count. Defaults to true.</param>
+        /// <param name="disableFirstEpisode">Whether to disable sending the first episode in a series as next up.</param>
         /// <returns>A <see cref="QueryResult{BaseItemDto}"/> with the next up episodes.</returns>
         [HttpGet("NextUp")]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -76,12 +77,13 @@ namespace Jellyfin.Api.Controllers
             [FromQuery] int? limit,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ItemFields[] fields,
             [FromQuery] string? seriesId,
-            [FromQuery] string? parentId,
+            [FromQuery] Guid? parentId,
             [FromQuery] bool? enableImges,
             [FromQuery] int? imageTypeLimit,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ImageType[] enableImageTypes,
             [FromQuery] bool? enableUserData,
-            [FromQuery] bool enableTotalRecordCount = true)
+            [FromQuery] bool enableTotalRecordCount = true,
+            [FromQuery] bool disableFirstEpisode = false)
         {
             var options = new DtoOptions { Fields = fields }
                 .AddClientFields(Request)
@@ -95,7 +97,8 @@ namespace Jellyfin.Api.Controllers
                     SeriesId = seriesId,
                     StartIndex = startIndex,
                     UserId = userId ?? Guid.Empty,
-                    EnableTotalRecordCount = enableTotalRecordCount
+                    EnableTotalRecordCount = enableTotalRecordCount,
+                    DisableFirstEpisode = disableFirstEpisode
                 },
                 options);
 
@@ -132,7 +135,7 @@ namespace Jellyfin.Api.Controllers
             [FromQuery] int? startIndex,
             [FromQuery] int? limit,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ItemFields[] fields,
-            [FromQuery] string? parentId,
+            [FromQuery] Guid? parentId,
             [FromQuery] bool? enableImges,
             [FromQuery] int? imageTypeLimit,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ImageType[] enableImageTypes,
@@ -144,7 +147,7 @@ namespace Jellyfin.Api.Controllers
 
             var minPremiereDate = DateTime.Now.Date.ToUniversalTime().AddDays(-1);
 
-            var parentIdGuid = string.IsNullOrWhiteSpace(parentId) ? Guid.Empty : new Guid(parentId);
+            var parentIdGuid = parentId ?? Guid.Empty;
 
             var options = new DtoOptions { Fields = fields }
                 .AddClientFields(Request)
@@ -194,14 +197,14 @@ namespace Jellyfin.Api.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public ActionResult<QueryResult<BaseItemDto>> GetEpisodes(
-            [FromRoute, Required] string seriesId,
+            [FromRoute, Required] Guid seriesId,
             [FromQuery] Guid? userId,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ItemFields[] fields,
             [FromQuery] int? season,
-            [FromQuery] string? seasonId,
+            [FromQuery] Guid? seasonId,
             [FromQuery] bool? isMissing,
             [FromQuery] string? adjacentTo,
-            [FromQuery] string? startItemId,
+            [FromQuery] Guid? startItemId,
             [FromQuery] int? startIndex,
             [FromQuery] int? limit,
             [FromQuery] bool? enableImages,
@@ -220,9 +223,9 @@ namespace Jellyfin.Api.Controllers
                 .AddClientFields(Request)
                 .AddAdditionalDtoOptions(enableImages, enableUserData, imageTypeLimit, enableImageTypes!);
 
-            if (!string.IsNullOrWhiteSpace(seasonId)) // Season id was supplied. Get episodes by season id.
+            if (seasonId.HasValue) // Season id was supplied. Get episodes by season id.
             {
-                var item = _libraryManager.GetItemById(new Guid(seasonId));
+                var item = _libraryManager.GetItemById(seasonId.Value);
                 if (!(item is Season seasonItem))
                 {
                     return NotFound("No season exists with Id " + seasonId);
@@ -264,10 +267,10 @@ namespace Jellyfin.Api.Controllers
                     .ToList();
             }
 
-            if (!string.IsNullOrWhiteSpace(startItemId))
+            if (startItemId.HasValue)
             {
                 episodes = episodes
-                    .SkipWhile(i => !string.Equals(i.Id.ToString("N", CultureInfo.InvariantCulture), startItemId, StringComparison.OrdinalIgnoreCase))
+                    .SkipWhile(i => !startItemId.Value.Equals(i.Id))
                     .ToList();
             }
 
@@ -316,7 +319,7 @@ namespace Jellyfin.Api.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public ActionResult<QueryResult<BaseItemDto>> GetSeasons(
-            [FromRoute, Required] string seriesId,
+            [FromRoute, Required] Guid seriesId,
             [FromQuery] Guid? userId,
             [FromQuery, ModelBinder(typeof(CommaDelimitedArrayModelBinder))] ItemFields[] fields,
             [FromQuery] bool? isSpecialSeason,

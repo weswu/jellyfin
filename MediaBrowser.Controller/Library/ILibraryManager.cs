@@ -571,6 +571,10 @@ namespace MediaBrowser.Controller.Library
             string videoPath,
             string[] files);
 
+        Task RunMetadataSavers(BaseItem item, ItemUpdateType updateReason);
+
         BaseItem GetParentItem(string parentId, Guid? userId);
+
+        BaseItem GetParentItem(Guid? parentId, Guid? userId);
     }
 }
